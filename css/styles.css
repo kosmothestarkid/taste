@@ -775,6 +775,78 @@ button { font-family: var(--font-body); }
 
 .add-item-form .span-2 { grid-column: span 2; }
 
+/* ---- Typeahead (autocomplete dropdown) --------------------- */
+.ac-field { position: relative; }
+.ac-field > input { width: 100%; }
+
+/* The category combobox input matches the item inputs. */
+#cat-search {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 0.92rem;
+  padding: 0.6rem 0.8rem;
+  outline: none;
+}
+#cat-search:focus { border-color: var(--accent); }
+
+.ac-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 30;
+  max-height: 20rem;
+  overflow-y: auto;
+  padding: 0.25rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+}
+
+.ac-note { padding: 0.5rem 0.6rem; color: var(--text-muted); font-size: var(--size-sm); }
+
+.ac-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  border: none;
+  background: none;
+  color: var(--text);
+  text-align: left;
+  padding: 0.4rem 0.5rem;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.ac-row:hover, .ac-row.active { background: var(--surface-2); }
+
+.ac-thumb {
+  flex: none;
+  width: 2rem;
+  aspect-ratio: 2 / 3;
+  border-radius: 3px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--border) 40%, var(--bg));
+  display: grid;
+  place-items: center;
+  font-size: 0.6rem;
+  color: var(--text-muted);
+}
+
+.ac-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+.ac-text { min-width: 0; display: flex; flex-direction: column; line-height: 1.3; }
+
+.ac-title { font-size: 0.9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.ac-sub { font-size: var(--size-sm); color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 .cat-actions {
   display: flex;
   gap: 0.8rem;

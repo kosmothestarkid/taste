@@ -37,9 +37,18 @@ python3 -m http.server 4173
   [DIRECTUS_SCHEMA.md](DIRECTUS_SCHEMA.md). Only [js/db.js](js/db.js) and
   [js/auth.js](js/auth.js) swap out; everything above them stays.
 - Two demo cards (Kosmo, Nova) seed the deck so it's never empty.
-- Film posters need a free TMDB API key (Dashboard → Settings). Books, music, manga and
-  anime fetch covers keylessly (Open Library, iTunes, AniList). Every entry always links
-  out — no key, no fetch, it falls back to the platform's search page.
+- **Typeahead as you journal.** Start typing a title and a thumbnail list appears —
+  films, books, music, manga, anime. Pick the exact one and its cover + creator + year
+  lock in straight away (so an obscure album lands as surely as a famous one). Games and
+  custom shelves stay plain text.
+- **Categories are a search box, not a fixed list.** Type a shelf name; it matches any
+  category anyone here has already made (join "theatre" if it exists) or spins up a new
+  one. Unknown names become a `custom` shelf with a web-search door.
+- **Covers fetch with no key by default.** Books (Open Library), music (iTunes), manga /
+  anime (AniList) and now **films** (Wikipedia — poster + director + year) all fetch
+  keylessly. A free TMDB key (Dashboard → Settings) is optional: it upgrades films to
+  exact Letterboxd `/tmdb/` links and TMDB posters. Every entry always links out — no
+  match, no fetch, it falls back to the platform's search page.
 
 ## Map
 

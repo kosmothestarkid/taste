@@ -87,7 +87,7 @@ export function tasteHtml(profileId, { backHref = '#/deck' } = {}) {
     return `
       <section class="taste-section-wrap">
         <details class="taste-section" open>
-          <summary><h2>${esc(info.label)}</h2></summary>
+          <summary><h2>${esc((cat.name || info.label).trim())}</h2></summary>
           <div class="section-body">
             ${items.length ? `
             <div class="view-toggle" hidden>

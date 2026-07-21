@@ -114,13 +114,17 @@ export const profileByUser = (userId) => db().profiles.find((p) => p.userId === 
 export const categoriesOf = (profileId) =>
   db().categories.filter((c) => c.profileId === profileId).sort((a, b) => a.sort - b.sort);
 
+/* Every category on this device — the pool the combobox searches so you
+   can join a shelf someone else already started (e.g. "theatre"). */
+export const allCategories = () => [...db().categories];
+
 export const itemsOf = (categoryId) =>
   db().items.filter((i) => i.categoryId === categoryId).sort((a, b) => a.sort - b.sort);
 
 /* ---- Mutations -------------------------------------------- */
-export function addCategory(profileId, type, platform) {
+export function addCategory(profileId, type, platform, name = '') {
   const cats = categoriesOf(profileId);
-  const cat = { id: uid(), profileId, type, platform, sort: cats.length + 1 };
+  const cat = { id: uid(), profileId, type, platform, name, sort: cats.length + 1 };
   db().categories.push(cat);
   save();
   return cat;
@@ -142,7 +146,10 @@ export function addItem(categoryId, fields) {
   const item = {
     id: uid(), categoryId,
     title: fields.title, creator: fields.creator ?? '', year: fields.year ?? null,
-    rating: fields.rating ?? null, url: null, image: null, status: 'pending',
+    rating: fields.rating ?? null,
+    // A typeahead pick arrives already resolved (url/image/status); a plain
+    // typed entry starts pending and waits for "Fetch links & art".
+    url: fields.url ?? null, image: fields.image ?? null, status: fields.status ?? 'pending',
     sort: itemsOf(categoryId).length + 1,
   };
   db().items.push(item);

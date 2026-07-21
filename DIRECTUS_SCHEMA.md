@@ -32,9 +32,14 @@ The shelves a profile curates.
 |---|---|---|
 | `id` | uuid (PK) | |
 | `profile` | m2o → `taste_profiles` | cascade delete |
-| `type` | string enum: `film` / `books` / `music` / `manga` / `anime` / `games` | drives renderer + resolver |
-| `platform` | string | the chosen door, e.g. `letterboxd`, `goodreads`, `spotify`, `applemusic`, `bandcamp`, `anilist`, `mal` (validated client-side against platforms.js) |
+| `name` | string | the shelf's shown label (e.g. `Films`, `Theatre`); the combobox matches this across profiles so users can join an existing category. Empty falls back to the type's default label |
+| `type` | string enum: `film` / `books` / `music` / `manga` / `anime` / `games` / `custom` | drives renderer + resolver; `custom` is any free-named shelf (theatre, podcasts…) with a web-search door and no auto-resolver |
+| `platform` | string | the chosen door, e.g. `letterboxd`, `goodreads`, `spotify`, `applemusic`, `bandcamp`, `anilist`, `mal`, `web` (validated client-side against platforms.js) |
 | `sort` | integer | order on the taste page |
+
+> The combobox's "categories others have made" pool is a global read over
+> `taste_categories.name` (deduped, case-insensitive). In the local prototype that pool is
+> every category on the device; on Directus it's a public read across published profiles.
 
 ### `taste_items`
 

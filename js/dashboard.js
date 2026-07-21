@@ -6,15 +6,34 @@
    ============================================================ */
 
 import {
-  profileByUser, updateProfile, categoriesOf, itemsOf,
+  profileByUser, updateProfile, categoriesOf, itemsOf, allCategories,
   addCategory, removeCategory, setCategoryPlatform,
   addItem, updateItem, removeItem, getSetting, setSetting,
 } from './db.js';
 import { currentUser, signOut } from './auth.js';
 import { CATEGORY_TYPES, typeInfo } from './platforms.js';
-import { resolveAll } from './resolve.js';
+import { resolveAll, suggest } from './resolve.js';
 import { esc, stars } from './render-taste.js';
 import { toast } from './main.js';
+
+/* A category's shown name: the custom label if set, else the type label. */
+const catName = (cat) => (cat.name || typeInfo(cat.type).label).trim();
+
+/* Category types with a live typeahead source (see resolve.js suggest()). */
+const SEARCHABLE_TYPES = new Set(['film', 'books', 'music', 'manga', 'anime']);
+
+/* Guess a resolver type from a free-typed category name; 'custom' if none
+   fit (theatre, podcasts, food…), which still gets a web-search door. */
+function typeForName(name) {
+  const n = String(name).toLowerCase();
+  if (/\b(films?|movies?|cinema)\b/.test(n)) return 'film';
+  if (/\b(books?|novels?|reading|literature)\b/.test(n)) return 'books';
+  if (/\b(music|albums?|songs?|artists?)\b/.test(n)) return 'music';
+  if (/\b(manga|comics?)\b/.test(n)) return 'manga';
+  if (/\b(anime)\b/.test(n)) return 'anime';
+  if (/\b(games?|gaming|videogames?)\b/.test(n)) return 'games';
+  return 'custom';
+}
 
 const STATUS_LABEL = {
   pending: '○ not fetched',
@@ -45,7 +64,7 @@ function categoryBlockHtml(cat) {
   return `
     <div class="cat-block" data-cat-block="${esc(cat.id)}">
       <div class="cat-head">
-        <h3>${esc(info.label)}</h3>
+        <h3>${esc(catName(cat))}</h3>
         <button class="danger-btn" data-remove-cat="${esc(cat.id)}">remove</button>
       </div>
       <div class="platform-pick">${chips}</div>
@@ -53,7 +72,10 @@ function categoryBlockHtml(cat) {
         ${items.map(itemRowHtml).join('') || '<p class="empty-note">Type your first entry below.</p>'}
       </div>
       <form class="add-item-form" data-add-to="${esc(cat.id)}">
-        <input name="title" placeholder="Title" required class="span-2">
+        <div class="ac-field span-2">
+          <input name="title" placeholder="Start typing a title…" required autocomplete="off">
+          <div class="ac-menu" hidden></div>
+        </div>
         <input name="creator" placeholder="${esc(info.creatorLabel)}">
         <input name="year" placeholder="Year" inputmode="numeric" pattern="[0-9]*">
         <select name="rating">
@@ -77,11 +99,6 @@ export function dashboardHtml() {
   const user = currentUser();
   const profile = profileByUser(user.id);
   const cats = categoriesOf(profile.id);
-  const usedTypes = new Set(cats.map((c) => c.type));
-  const typeOptions = Object.entries(CATEGORY_TYPES)
-    .filter(([key]) => !usedTypes.has(key))
-    .map(([key, t]) => `<option value="${key}">${esc(t.label)}</option>`)
-    .join('');
 
   const letter = esc((profile.name || '?').charAt(0).toUpperCase());
   return `
@@ -119,15 +136,16 @@ export function dashboardHtml() {
 
     <section class="panel">
       <h2>Your categories</h2>
-      <p class="sub">Pick a shelf, pick its door, type your list, then fetch.</p>
+      <p class="sub">Search a shelf someone's already started — or name your own. Type your list, then fetch.</p>
       <div id="cat-blocks">${cats.map(categoryBlockHtml).join('')}</div>
-      ${typeOptions ? `
       <form id="add-cat-form" class="dash-row">
-        <select name="type" required style="flex:1;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-2);color:var(--text);padding:0.6rem 0.8rem;">
-          ${typeOptions}
-        </select>
+        <div class="ac-field" style="flex:1;">
+          <input id="cat-search" name="name" autocomplete="off"
+            placeholder="Search or name a category — films, theatre, music…">
+          <div class="ac-menu" hidden></div>
+        </div>
         <button class="pill-btn small" type="submit">Add category</button>
-      </form>` : '<p class="empty-note">All shelves are in use.</p>'}
+      </form>
     </section>
 
     <section class="panel">
@@ -165,9 +183,119 @@ function readPhoto(file) {
   });
 }
 
+/* Generic typeahead: debounced fetch, thumbnails, keyboard + click select.
+   `fetch(q)` returns rows of { title, sub?, image?, ...payload };
+   `onPick(row)` acts on the chosen row. */
+function attachAutocomplete(input, menu, { fetch, onPick, minLen = 2 }) {
+  let rows = [], active = -1, token = 0, timer = null;
+
+  const close = () => { menu.hidden = true; menu.innerHTML = ''; rows = []; active = -1; };
+  const rowHtml = (it, i) => `
+    <button type="button" class="ac-row${i === active ? ' active' : ''}" data-i="${i}">
+      ${it.image
+        ? `<span class="ac-thumb"><img src="${esc(it.image)}" alt="" loading="lazy"></span>`
+        : `<span class="ac-thumb ac-thumb-blank">✦</span>`}
+      <span class="ac-text">
+        <span class="ac-title">${esc(it.title)}</span>
+        ${it.sub ? `<span class="ac-sub">${esc(it.sub)}</span>` : ''}
+      </span>
+    </button>`;
+  const render = () => {
+    if (!rows.length) { menu.innerHTML = '<div class="ac-note">No matches</div>'; menu.hidden = false; return; }
+    menu.innerHTML = rows.map(rowHtml).join('');
+    menu.hidden = false;
+    menu.querySelector('.ac-row.active')?.scrollIntoView({ block: 'nearest' });
+  };
+  const pick = (i) => { const it = rows[i]; if (it) { close(); onPick(it); } };
+
+  const run = async (q) => {
+    const mine = ++token;
+    menu.innerHTML = '<div class="ac-note">Searching…</div>';
+    menu.hidden = false;
+    let res = [];
+    try { res = await Promise.resolve(fetch(q)); } catch { res = []; }
+    if (mine !== token) return; // a newer keystroke already superseded this
+    rows = res || []; active = -1; render();
+  };
+
+  input.addEventListener('input', () => {
+    const q = input.value.trim();
+    clearTimeout(timer);
+    if (q.length < minLen) { close(); return; }
+    timer = setTimeout(() => run(q), 240);
+  });
+  input.addEventListener('keydown', (e) => {
+    if (menu.hidden) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); active = Math.min(active + 1, rows.length - 1); render(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); active = Math.max(active - 1, 0); render(); }
+    else if (e.key === 'Enter' && active >= 0) { e.preventDefault(); pick(active); }
+    else if (e.key === 'Escape') { close(); }
+  });
+  // mousedown (not click) so selection fires before the input's blur closes the menu.
+  menu.addEventListener('mousedown', (e) => {
+    const row = e.target.closest('.ac-row');
+    if (row) { e.preventDefault(); pick(Number(row.dataset.i)); }
+  });
+  input.addEventListener('blur', () => setTimeout(close, 150));
+}
+
+/* The pool the category combobox searches: every distinct category name on
+   this device (so you can join "theatre" if anyone made it) plus the built-in
+   shelves, ranked by how many people share each, filtered to the query. */
+function categoryOptions(query, profileId) {
+  const q = query.trim().toLowerCase();
+  const agg = new Map(); // lowercased name -> { name, type, count }
+  for (const c of allCategories()) {
+    const name = catName(c);
+    const key = name.toLowerCase();
+    const cur = agg.get(key) || { name, type: c.type, count: 0 };
+    cur.count += 1;
+    agg.set(key, cur);
+  }
+  // Seed the built-in shelves (skip the generic "custom" bucket).
+  for (const [type, t] of Object.entries(CATEGORY_TYPES)) {
+    if (type === 'custom') continue;
+    if (!agg.has(t.label.toLowerCase())) agg.set(t.label.toLowerCase(), { name: t.label, type, count: 0 });
+  }
+  const mine = new Set(categoriesOf(profileId).map((c) => catName(c).toLowerCase()));
+  let list = [...agg.values()].filter((r) => !q || r.name.toLowerCase().includes(q));
+  list.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  const rows = list.slice(0, 8).map((r) => ({
+    title: r.name,
+    sub: (r.count > 0 ? `${typeInfo(r.type).label} · ${r.count} ${r.count === 1 ? 'person' : 'people'}` : typeInfo(r.type).label)
+      + (mine.has(r.name.toLowerCase()) ? ' · already yours' : ''),
+    image: null,
+    _cat: { name: r.name, type: r.type },
+    _mine: mine.has(r.name.toLowerCase()),
+  }));
+  // Offer to create a brand-new shelf when the query isn't an exact match.
+  if (q && !agg.has(q)) {
+    const t = typeForName(query);
+    rows.unshift({
+      title: `Create “${query.trim()}”`,
+      sub: `new ${typeInfo(t).label.toLowerCase()} category`,
+      image: null,
+      _cat: { name: query.trim(), type: t },
+    });
+  }
+  return rows;
+}
+
 export function wireDashboard(root, rerender) {
   const user = currentUser();
   const profile = profileByUser(user.id);
+
+  /* Create (or join) a category by name, keeping names unique per profile. */
+  const commitCategory = (name, type) => {
+    name = String(name || '').trim();
+    if (!name) return;
+    const dup = categoriesOf(profile.id).some((c) => catName(c).toLowerCase() === name.toLowerCase());
+    if (dup) { toast('You already have that category.'); return; }
+    const t = type || typeForName(name);
+    const platform = Object.keys(typeInfo(t).platforms)[0];
+    addCategory(profile.id, t, platform, name);
+    rerender();
+  };
 
   root.querySelector('#profile-form')?.addEventListener('submit', (e) => {
     e.preventDefault();
@@ -189,25 +317,64 @@ export function wireDashboard(root, rerender) {
     }
   });
 
+  // Category combobox: search shelves others made, or name your own.
+  const catInput = root.querySelector('#cat-search');
+  const catMenu = root.querySelector('#add-cat-form .ac-menu');
+  if (catInput && catMenu) {
+    attachAutocomplete(catInput, catMenu, {
+      minLen: 1,
+      fetch: (q) => categoryOptions(q, profile.id),
+      onPick: (row) => commitCategory(row._cat.name, row._cat.type),
+    });
+  }
   root.querySelector('#add-cat-form')?.addEventListener('submit', (e) => {
     e.preventDefault();
-    const type = new FormData(e.target).get('type');
-    const firstPlatform = Object.keys(typeInfo(type).platforms)[0];
-    addCategory(profile.id, type, firstPlatform);
-    rerender();
+    commitCategory(catInput?.value, null);
   });
 
+  // Item rows: typeahead with thumbnails, then Add.
   root.querySelectorAll('.add-item-form').forEach((form) => {
+    const catId = form.dataset.addTo;
+    const cat = categoriesOf(profile.id).find((c) => c.id === catId);
+    const titleInput = form.querySelector('input[name="title"]');
+    const creatorInput = form.querySelector('input[name="creator"]');
+    const yearInput = form.querySelector('input[name="year"]');
+    const ratingInput = form.querySelector('[name="rating"]');
+    const menu = form.querySelector('.ac-menu');
+
+    // Only the types with a live source get a typeahead; games/custom stay plain.
+    if (cat && menu && titleInput && SEARCHABLE_TYPES.has(cat.type)) {
+      attachAutocomplete(titleInput, menu, {
+        minLen: 2,
+        fetch: (q) => suggest(q, cat).then((list) => list.map((r) => ({
+          title: r.title,
+          sub: [r.creator, r.year].filter(Boolean).join(' · '),
+          image: r.image,
+          _item: r,
+        }))),
+        onPick: (row) => {
+          const r = row._item;
+          titleInput.value = r.title || '';
+          if (r.creator) creatorInput.value = r.creator;
+          if (r.year) yearInput.value = r.year;
+          // Remember the exact match so Add stores its cover + link straight away.
+          form._selected = { title: r.title || '', image: r.image || null, url: r.url || null };
+        },
+      });
+    }
+
     form.addEventListener('submit', (e) => {
       e.preventDefault();
-      const f = new FormData(form);
-      const title = String(f.get('title') || '').trim();
+      const title = (titleInput.value || '').trim();
       if (!title) return;
-      addItem(form.dataset.addTo, {
+      const sel = form._selected;
+      const locked = sel && sel.title && sel.title.toLowerCase() === title.toLowerCase();
+      addItem(catId, {
         title,
-        creator: String(f.get('creator') || '').trim(),
-        year: Number(f.get('year')) || null,
-        rating: f.get('rating') ? Number(f.get('rating')) : null,
+        creator: (creatorInput?.value || '').trim(),
+        year: Number(yearInput?.value) || null,
+        rating: ratingInput?.value ? Number(ratingInput.value) : null,
+        ...(locked ? { url: sel.url, image: sel.image, status: (sel.image || sel.url) ? 'resolved' : 'partial' } : {}),
       });
       rerender();
     });

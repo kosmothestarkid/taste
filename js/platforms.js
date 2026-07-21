@@ -63,6 +63,17 @@ export const CATEGORY_TYPES = {
       steam: { label: 'Steam', search: (q) => `https://store.steampowered.com/search/?term=${encodeURIComponent(q)}` },
     },
   },
+  // Anything the built-in shelves don't cover — theatre, podcasts, food…
+  // No auto-resolver; every entry still gets a working web-search door.
+  custom: {
+    label: 'Custom',
+    creatorLabel: 'Maker',
+    tile: 'poster',
+    platforms: {
+      web: { label: 'Web search', search: (q) => `https://duckduckgo.com/?q=${encodeURIComponent(q)}` },
+      google: { label: 'Google', search: (q) => `https://www.google.com/search?q=${encodeURIComponent(q)}` },
+    },
+  },
 };
 
 export function typeInfo(type) {
