@@ -32,10 +32,11 @@ python3 -m http.server 4173
 ## Status: prototype
 
 - **Accounts and data live in localStorage on the device.** Sign-up/sign-in and the
-  whole journal work, but profiles aren't shared between devices yet. That's what the
-  Directus backend provides — the schema is written and matched to the code:
-  [DIRECTUS_SCHEMA.md](DIRECTUS_SCHEMA.md). Only [js/db.js](js/db.js) and
-  [js/auth.js](js/auth.js) swap out; everything above them stays.
+  whole journal work, but profiles aren't shared between devices yet (an account made on a
+  laptop won't show on a phone). That's what the Directus backend provides — the schema is
+  written and matched to the code: [DIRECTUS_SCHEMA.md](DIRECTUS_SCHEMA.md), and the
+  step-by-step wiring guide is [DIRECTUS_INTEGRATION.md](DIRECTUS_INTEGRATION.md). Only
+  [js/db.js](js/db.js) and [js/auth.js](js/auth.js) swap out; everything above them stays.
 - Two demo cards (Kosmo, Nova) seed the deck so it's never empty.
 - **Typeahead as you journal.** Start typing a title and a thumbnail list appears —
   films, books, music, manga, anime. Pick the exact one and its cover + creator + year
